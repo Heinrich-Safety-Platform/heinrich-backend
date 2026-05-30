@@ -1,9 +1,11 @@
 # ERD (Entity Relationship Diagram)
 
-## reports 테이블 구조
+## 테이블 관계도
 
 ```mermaid
 erDiagram
+    REPORTS ||--o{ STATUS_LOGS : "상태 변경 이력"
+
     REPORTS {
         UUID id PK "gen_random_uuid()"
         TEXT content "nullable - 이상 징후 설명"
@@ -12,17 +14,38 @@ erDiagram
         GEOGRAPHY location "NOT NULL - GEOGRAPHY(Point 4326)"
         VARCHAR_20 hazard_type "NOT NULL - IMMEDIATE or LATENT"
         INTEGER risk_score "DEFAULT 10 - CHECK 0~100"
-        VARCHAR_20 risk_level "DEFAULT SAFE - SAFE/NEAR_MISS/MINOR/CRITICAL"
-        VARCHAR_20 status "DEFAULT OPEN - OPEN/IN_PROGRESS/RESOLVED"
+        VARCHAR_20 risk_level "DEFAULT SAFE"
+        VARCHAR_20 status "DEFAULT OPEN"
         FLOAT trust_score "DEFAULT 1.0 - CHECK 0.0~1.0"
         TIMESTAMP created_at "DEFAULT NOW()"
     }
+
+    STATUS_LOGS {
+        UUID id PK "gen_random_uuid()"
+        UUID report_id FK "REPORTS.id (Cascade Delete)"
+        VARCHAR_20 previous_status "이전 상태"
+        VARCHAR_20 changed_status "변경된 상태"
+        TEXT note "관리자 조치 메모 (nullable)"
+        TIMESTAMP changed_at "DEFAULT NOW()"
+    }
 ```
 
-## DDL (테이블 생성 쿼리)
+## 설계 근거
+
+- **단일 reports 테이블**: 외래키 복잡도 없이 공간 연산에 집중
+- **STATUS_LOGS 분리**: 상태 변경 감사 추적(Audit Trail) 구조
+  - OPEN → IN_PROGRESS → RESOLVED 이력 전체 보존
+  - 관리자가 언제 어떤 조치를 했는지 타임라인 제공
+  - 관리자 대시보드 히스토리 기능으로 연결
+- **USERS 테이블 미도입**: 익명 제보 원칙과 충돌하므로 제외
+- **REPORT_IMAGES 미도입**: MVP는 사진 1장 단수 처리, 다중 사진은 후속 과제
+
+## DDL
+
+### reports 테이블
 
 ```sql
-CREATE TABLE reports (
+CREATE TABLE IF NOT EXISTS reports (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content          TEXT,
     location_detail  VARCHAR(200),
@@ -42,21 +65,39 @@ CREATE TABLE reports (
 );
 ```
 
+### status_logs 테이블
+
+```sql
+CREATE TABLE IF NOT EXISTS status_logs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_id        UUID NOT NULL
+                     REFERENCES reports(id) ON DELETE CASCADE,
+    previous_status  VARCHAR(20),
+    changed_status   VARCHAR(20) NOT NULL,
+    note             TEXT,
+    changed_at       TIMESTAMP DEFAULT NOW()
+);
+```
+
 ## 인덱스
 
 ```sql
 -- 공간 쿼리용 GiST 인덱스
-CREATE INDEX idx_reports_location
+CREATE INDEX IF NOT EXISTS idx_reports_location
 ON reports USING GIST(location);
 
 -- 시간 윈도우 쿼리용 인덱스
-CREATE INDEX idx_reports_created_at
+CREATE INDEX IF NOT EXISTS idx_reports_created_at
 ON reports(created_at);
 
 -- OPEN/IN_PROGRESS 상태 조회 최적화 (부분 인덱스)
-CREATE INDEX idx_reports_open
+CREATE INDEX IF NOT EXISTS idx_reports_open
 ON reports(status)
 WHERE status != 'RESOLVED';
+
+-- status_logs 조회 최적화
+CREATE INDEX IF NOT EXISTS idx_status_logs_report_id
+ON status_logs(report_id);
 ```
 
 ## 핵심 공간 쿼리
@@ -85,19 +126,16 @@ SELECT COUNT(*) FROM reports
 WHERE ST_DWithin(location, :point, 10)
 AND hazard_type = 'IMMEDIATE'
 AND status = 'OPEN';
+
+-- 특정 제보의 상태 변경 이력 조회
+SELECT * FROM status_logs
+WHERE report_id = :report_id
+ORDER BY changed_at ASC;
 ```
-
-## 설계 근거
-
-- **GEOGRAPHY 타입**: 미터 단위 반경 연산을 위해 GEOMETRY 대신 사용
-- **GiST 인덱스**: R-Tree 기반 공간 탐색 성능 보장
-- **단일 테이블**: 외래키 복잡도 없이 공간 연산에 집중
-- **CHECK 제약**: DB 레벨 데이터 무결성 보장
-- **부분 인덱스**: RESOLVED 제외한 OPEN 상태 조회 최적화
 
 ## ⚠️ 트랜잭션 주의사항
 
-제보 저장과 risk 재계산은 같은 트랜잭션 안에서 처리 필요:
+제보 저장과 risk 재계산은 같은 트랜잭션 안에서 처리:
 
 ```
 flush → recalculate_area → commit
@@ -115,3 +153,15 @@ AND hazard_type = 'LATENT'
 AND status != 'RESOLVED'
 AND created_at > NOW() - INTERVAL '30 days';
 ```
+
+상태 변경 시 STATUS_LOGS에 이력 자동 기록:
+
+```sql
+INSERT INTO status_logs (report_id, previous_status, changed_status, note)
+VALUES (:report_id, :previous, :new_status, :note);
+```
+
+## 후속 과제
+
+- **REPORT_IMAGES**: 다중 사진 업로드 지원 (1:N 구조)
+- **USERS**: 관리자 다중 승인 체계 도입 시 추가 (Gerrit 방식)

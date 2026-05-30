@@ -151,6 +151,7 @@ classDiagram
         +update_status(id, status)
         +get_alerts()
         +generate_qr(lat, lng)
+        +log_status_change(id, prev, new, note)
     }
 
     ReportService ..> RiskAnalysisService : uses

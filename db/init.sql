@@ -5,7 +5,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- reports 테이블 생성
+-- 1. reports 테이블 (핵심)
 CREATE TABLE IF NOT EXISTS reports (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content          TEXT,
@@ -25,15 +25,28 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at       TIMESTAMP DEFAULT NOW()
 );
 
--- 공간 쿼리용 GiST 인덱스
+-- 2. status_logs 테이블 (상태 변경 감사 추적)
+CREATE TABLE IF NOT EXISTS status_logs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_id        UUID NOT NULL
+                     REFERENCES reports(id) ON DELETE CASCADE,
+    previous_status  VARCHAR(20),
+    changed_status   VARCHAR(20) NOT NULL,
+    note             TEXT,
+    changed_at       TIMESTAMP DEFAULT NOW()
+);
+
+-- reports 인덱스
 CREATE INDEX IF NOT EXISTS idx_reports_location
 ON reports USING GIST(location);
 
--- 시간 윈도우 쿼리용 인덱스
 CREATE INDEX IF NOT EXISTS idx_reports_created_at
 ON reports(created_at);
 
--- OPEN/IN_PROGRESS 상태 조회 최적화 (부분 인덱스)
 CREATE INDEX IF NOT EXISTS idx_reports_open
 ON reports(status)
 WHERE status != 'RESOLVED';
+
+-- status_logs 인덱스
+CREATE INDEX IF NOT EXISTS idx_status_logs_report_id
+ON status_logs(report_id);
