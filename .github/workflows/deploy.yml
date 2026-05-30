@@ -1,0 +1,72 @@
+name: Heinrich Safety Backend CI/CD
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  # CI: 테스트 먼저 (코드 무결성 사전 검증)
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run tests
+        run: |
+          if [ -f "pytest.ini" ] || [ -d "tests" ]; then
+            pytest --tb=short
+          else
+            echo "No tests yet - skipping"
+          fi
+
+  # CD: 테스트 검증 통과 후 클라우드 VM 배포
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloud VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            mkdir -p ~/heinrich-backend
+            cd ~/heinrich-backend
+
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+
+            echo "DB_USER=${{ secrets.DB_USER }}" > .env
+            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+            echo "DB_HOST=db" >> .env
+            echo "DB_PORT=5432" >> .env
+            echo "DB_NAME=heinrich_safety" >> .env
+            echo "ADMIN_TOKEN=${{ secrets.ADMIN_TOKEN }}" >> .env
+
+            docker-compose down
+            docker-compose up -d --build
+
+            echo "Checking container status..."
+            sleep 5
+            docker ps
