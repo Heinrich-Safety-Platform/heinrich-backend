@@ -31,9 +31,11 @@
   │     ├── EXIF 교차 검증 → trust_score
   │     ├── rate limit 체크 (1분 3건)
   │     ├── IMMEDIATE → 즉시 CRITICAL + 반경 10m 중복 체크
-  │     └── LATENT    → 하인리히 누적 분석 즉시 재계산
+  │     └── LATENT    → 하인리히 누적 count 산출 (응답용, DB 저장 없음)
   ├── GET  /api/layers?lat=&lng=&radius=
-  │         뷰포트 기반 레이어 JSON 공급
+  │         동적 실시간 위험도 계산 (Stateless)
+  │         위험도는 저장하지 않고 조회 시 PostGIS로 실시간 산출
+  │         ※ GiST 인덱스 기반 CROSS JOIN LATERAL 단일 쿼리
   │         외부 지도 플랫폼 이식 가능한 표준 JSON 배열 형태
   ├── GET  /api/admin/alerts
   │         CRITICAL 목록 (IMMEDIATE+LATENT, Phase 2: 90일 경고)
@@ -82,6 +84,9 @@ GET /api/layers API를 플러그인처럼 연동하여
 | AI (바이브코딩) | Claude Code + oh-my-claude code                      |
 
 ## 위험 레벨별 사용자 경험
+
+※ 아래 위험 레벨은 `GET /api/layers` 요청 시 PostGIS 쿼리로 실시간 계산됩니다.
+  DB에 저장된 값이 아니라 매 조회마다 동적으로 산출됩니다.
 
 ```
 LATENT 트랙 (누적 분석)

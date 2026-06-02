@@ -25,7 +25,6 @@ sequenceDiagram
         BE->>BE: 하인리히 스코어 산출
     end
     BE->>DB: INSERT report
-    DB->>DB: risk 재계산 (Bulk Update)
     DB-->>BE: 저장 완료
     BE-->>FE: 201 Created
     FE-->>시민: 토스트 "제보가 접수됐습니다 ✓"
@@ -36,23 +35,31 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant RS as ReportService
+    actor 시민
+    participant FE as Frontend (PWA)
+    participant BE as FastAPI (ReportService)
     participant RA as RiskAnalysisService
     participant DB as PostGIS DB
 
-    RS->>RA: calculate_risk(hazard_type, location)
-    alt IMMEDIATE
-        RA->>RA: 즉시 100점, CRITICAL 반환
-    else LATENT
-        RA->>DB: ST_DWithin 쿼리
-        Note over RA,DB: 반경 50m, 최근 30일, status != RESOLVED
-        DB-->>RA: 누적 count 반환
-        RA->>RA: 하인리히 공식 적용
-        Note over RA: 1~5건 NEAR_MISS / 6~29건 MINOR / 30건+ CRITICAL
-        RA-->>RS: score, level 반환
+    시민->>FE: /map 진입 (뷰포트 이동)
+    FE->>BE: GET /api/layers?lat=&lng=&radius=
+    BE->>DB: SELECT reports in viewport (ST_DWithin)
+    DB-->>BE: 뷰포트 내 제보 목록 반환
+    loop 각 제보에 대해 (LATERAL 서브쿼리로 DB 내부 처리)
+        BE->>RA: calculate_risk(hazard_type, location)
+        alt IMMEDIATE
+            RA->>RA: 즉시 CRITICAL 반환
+        else LATENT
+            RA->>DB: ST_DWithin COUNT 쿼리 (반경 50m, 최근 30일)
+            Note over RA,DB: status != RESOLVED 필터
+            DB-->>RA: 누적 count 반환
+            RA->>RA: 하인리히 공식 적용
+            Note over RA: 1~5건→NEAR_MISS / 6~29건→MINOR / 30건+→CRITICAL
+            RA-->>BE: riskLevel, reportCount 반환
+        end
     end
-    RS->>DB: UPDATE risk_score, risk_level (Bulk Update)
-    DB-->>RS: 업데이트 완료
+    BE-->>FE: LayerResponse[] (riskLevel 포함, riskScore 없음)
+    FE-->>시민: 위험도 레이어 지도에 렌더링
 ```
 
 ## 3. 시퀀스 다이어그램 - 관리자 조기 대응 흐름 (REQ-03)
@@ -97,8 +104,6 @@ classDiagram
         +str image_path
         +Geography location
         +str hazard_type
-        +int risk_score
-        +str risk_level
         +str status
         +float trust_score
         +datetime created_at
@@ -118,7 +123,6 @@ classDiagram
         <<Pydantic Schema>>
         +float lat
         +float lng
-        +int riskScore
         +str riskLevel
         +str hazardType
         +int reportCount
@@ -128,7 +132,6 @@ classDiagram
     class RiskAnalysisService {
         -Session db
         +calculate_risk(type, location)
-        +recalculate_area(location)
         +check_duplicate(location)
         +get_nearby_count(point)
     }

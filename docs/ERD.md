@@ -13,8 +13,6 @@ erDiagram
         VARCHAR_500 image_path "NOT NULL - UUID 저장 경로"
         GEOGRAPHY location "NOT NULL - GEOGRAPHY(Point 4326)"
         VARCHAR_20 hazard_type "NOT NULL - IMMEDIATE or LATENT"
-        INTEGER risk_score "DEFAULT 10 - CHECK 0~100"
-        VARCHAR_20 risk_level "DEFAULT SAFE"
         VARCHAR_20 status "DEFAULT OPEN"
         FLOAT trust_score "DEFAULT 1.0 - CHECK 0.0~1.0"
         TIMESTAMP created_at "DEFAULT NOW()"
@@ -53,10 +51,6 @@ CREATE TABLE IF NOT EXISTS reports (
     location         GEOGRAPHY(Point, 4326) NOT NULL,
     hazard_type      VARCHAR(20) NOT NULL
                      CHECK (hazard_type IN ('IMMEDIATE', 'LATENT')),
-    risk_score       INTEGER DEFAULT 10
-                     CHECK (risk_score >= 0 AND risk_score <= 100),
-    risk_level       VARCHAR(20) DEFAULT 'SAFE'
-                     CHECK (risk_level IN ('SAFE', 'NEAR_MISS', 'MINOR', 'CRITICAL')),
     status           VARCHAR(20) DEFAULT 'OPEN'
                      CHECK (status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED')),
     trust_score      FLOAT DEFAULT 1.0
@@ -133,33 +127,26 @@ WHERE report_id = :report_id
 ORDER BY changed_at ASC;
 ```
 
-## ⚠️ 트랜잭션 주의사항
+## 위험도 산출 방식 (Stateless)
 
-제보 저장과 risk 재계산은 같은 트랜잭션 안에서 처리:
+위험도(`riskLevel`)는 `reports` 테이블에 저장하지 않습니다.
+`GET /api/layers` 요청 시 PostGIS `ST_DWithin` 쿼리로 실시간 계산됩니다.
 
-```
-flush → recalculate_area → commit
-```
+### 산출 규칙
 
-recalculate_area 실행 시 반경 50m 내 기존 OPEN 상태 제보들의
-risk_score, risk_level도 Bulk Update 필요:
+| 트랙 | 조건 | riskLevel |
+|------|------|-----------|
+| IMMEDIATE | hazard_type = 'IMMEDIATE', status = 'OPEN' | CRITICAL (즉시) |
+| LATENT | 반경 50m, 최근 30일, status != 'RESOLVED', count 0 | SAFE |
+| LATENT | 동일 조건, count 1~5 | NEAR_MISS |
+| LATENT | 동일 조건, count 6~29 | MINOR |
+| LATENT | 동일 조건, count 30+ | CRITICAL |
 
-```sql
-UPDATE reports
-SET risk_score = :score,
-    risk_level = :level
-WHERE ST_DWithin(location, :point, 50)
-AND hazard_type = 'LATENT'
-AND status != 'RESOLVED'
-AND created_at > NOW() - INTERVAL '30 days';
-```
+### 장점
 
-상태 변경 시 STATUS_LOGS에 이력 자동 기록:
-
-```sql
-INSERT INTO status_logs (report_id, previous_status, changed_status, note)
-VALUES (:report_id, :previous, :new_status, :note);
-```
+- INSERT 시 Bulk UPDATE 없이 단순 단일 행 쓰기 → 쓰기 성능 향상, 트랜잭션 단순화
+- 과거 데이터 변경 시 조회 시점에 자동 반영 (stale 데이터 없음)
+- `idx_reports_location` GiST 인덱스가 실시간 `ST_DWithin` 계산 성능을 보장
 
 ## 후속 과제
 

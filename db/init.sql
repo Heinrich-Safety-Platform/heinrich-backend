@@ -14,10 +14,6 @@ CREATE TABLE IF NOT EXISTS reports (
     location         GEOGRAPHY(Point, 4326) NOT NULL,
     hazard_type      VARCHAR(20) NOT NULL
                      CHECK (hazard_type IN ('IMMEDIATE', 'LATENT')),
-    risk_score       INTEGER DEFAULT 10
-                     CHECK (risk_score >= 0 AND risk_score <= 100),
-    risk_level       VARCHAR(20) DEFAULT 'SAFE'
-                     CHECK (risk_level IN ('SAFE', 'NEAR_MISS', 'MINOR', 'CRITICAL')),
     status           VARCHAR(20) DEFAULT 'OPEN'
                      CHECK (status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED')),
     trust_score      FLOAT DEFAULT 1.0
