@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from typing import List
 import os
 
+from app.database import get_db
+
 app = FastAPI(
     title="Heinrich Safety Layer Engine",
     description="하인리히 법칙 기반 공간 위험도 분석 API",
@@ -23,12 +25,6 @@ app.add_middleware(
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/static/images", StaticFiles(directory=UPLOAD_DIR), name="images")
-
-
-# ── Dependency (stub — real implementation in app/database.py) ────────────────
-def get_db():
-    """DB 세션 의존성 — app/database.py 구현 후 교체 예정."""
-    raise NotImplementedError("get_db must be implemented in app/database.py")
 
 
 # ── Response Schema ───────────────────────────────────────────────────────────
