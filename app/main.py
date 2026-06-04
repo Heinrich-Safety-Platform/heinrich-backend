@@ -1,13 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List
 import os
 
 from app.database import get_db
+from app.schemas.report import LayerResponse
 
 app = FastAPI(
     title="Heinrich Safety Layer Engine",
@@ -25,18 +25,6 @@ app.add_middleware(
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/static/images", StaticFiles(directory=UPLOAD_DIR), name="images")
-
-
-# ── Response Schema ───────────────────────────────────────────────────────────
-
-class LayerResponse(BaseModel):
-    id: str
-    lat: float
-    lng: float
-    hazardType: str   # 'LATENT' | 'IMMEDIATE'
-    riskLevel: str    # 'SAFE' | 'NEAR_MISS' | 'MINOR' | 'CRITICAL'
-    reportCount: int  # LATENT: 50m 내 누적 count / IMMEDIATE: 1 (고정)
-    status: str       # 'OPEN' | 'IN_PROGRESS'
 
 
 # ── Stateless Risk SQL ────────────────────────────────────────────────────────
@@ -119,6 +107,7 @@ async def get_layers(
             {"lat": lat, "lng": lng, "radius": radius},
         ).mappings().all()
     except Exception as exc:
+        print("❌ 진짜 터진 에러 원인:", str(exc))
         raise HTTPException(status_code=500, detail="Spatial query failed") from exc
 
     return [
