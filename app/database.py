@@ -2,7 +2,7 @@ from sqlalchemy import (
     create_engine, Column, String, Text, Float, DateTime,
     ForeignKey, CheckConstraint, text
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, deferred, sessionmaker, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from geoalchemy2 import Geometry
@@ -44,10 +44,10 @@ class Report(Base):
     content = Column(Text, nullable=True)
     location_detail = Column(String(200), nullable=True)
     image_path = Column(String(500), nullable=False)
-    location = Column(
+    location = deferred(Column(
         Geometry(geometry_type="POINT", srid=4326),
         nullable=False,
-    )
+    ))
     hazard_type = Column(String(20), nullable=False)
     status = Column(String(20), server_default="OPEN")
     trust_score = Column(Float, server_default=text("1.0"))
