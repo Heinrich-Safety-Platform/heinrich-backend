@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from PIL import Image
-from PIL.ExifTags import GPSTAGS, TAGS
+from PIL.ExifTags import GPSTAGS
 
 
 class ImageService:
@@ -24,19 +24,10 @@ class ImageService:
     def extract_exif(self, contents: bytes) -> dict:
         try:
             image = Image.open(io.BytesIO(contents))
-            raw_exif = image._getexif()
-            if raw_exif is None:
+            gps_ifd = image.getexif().get_ifd(0x8825)
+            if not gps_ifd:
                 return {}
 
-            gps_info = {}
-            for tag_id, value in raw_exif.items():
-                tag = TAGS.get(tag_id)
-                if tag == "GPSInfo":
-                    for gps_tag_id, gps_value in value.items():
-                        gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
-                        gps_info[gps_tag] = gps_value
-                    break
-
-            return gps_info
+            return {GPSTAGS.get(tag_id, tag_id): value for tag_id, value in gps_ifd.items()}
         except Exception:
             return {}
