@@ -1,12 +1,23 @@
+import os
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.limiter import limiter
-from app.schemas.report import ReportCreateResponse
+from app.schemas.report import ReportCreateResponse, StatusUpdateRequest, StatusUpdateResponse
 from app.services.exif_service import ExifService
 from app.services.image_service import ImageService
 from app.services.report_service import ReportService
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _verify_admin(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
+    if credentials is None or credentials.credentials != os.getenv("ADMIN_TOKEN"):
+        raise HTTPException(status_code=401, detail="Invalid or missing admin token")
 
 router = APIRouter()
 
@@ -56,4 +67,19 @@ async def create_report(
         hazard_type=report.hazard_type,
         trust_score=report.trust_score,
         message="제보가 성공적으로 등록되었습니다.",
+    )
+
+
+@router.patch("/api/admin/reports/{report_id}/status", response_model=StatusUpdateResponse)
+async def update_report_status(
+    report_id: UUID,
+    req: StatusUpdateRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_admin),
+) -> StatusUpdateResponse:
+    report, prev_status = ReportService(db).update_status(report_id, req)
+    return StatusUpdateResponse(
+        id=report.id,
+        previous_status=prev_status,
+        new_status=report.status,
     )
