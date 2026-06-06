@@ -163,3 +163,48 @@ classDiagram
     ReportCreate ..> Report : creates
     Report ..> LayerResponse : maps to
 ```
+
+---
+
+## 🛠️ 설계 변경 및 아키텍처 최적화 사유 (Design Decision Notes)
+
+### RiskAnalysisService → PostGIS Push-down
+
+#### 초기 설계 의도
+
+클래스 다이어그램에 명시된 `RiskAnalysisService`는 위험도 실시간 계산과 하인리히 법칙 가중치 연산을 전담하는 별도 애플리케이션 레이어 클래스로 기획되었다.
+
+#### 실제 구현에서의 변경
+
+`RiskAnalysisService`는 최종 구현에 존재하지 않는다. 해당 책임은 `GET /api/layers`의 PostGIS SQL 쿼리 내부로 완전히 흡수되었다.
+
+#### 변경 사유 — 성능 트레이드오프
+
+파이썬 애플리케이션 레이어에서 다량의 제보 데이터를 메모리에 로드한 뒤 반복문으로 공간 거리를 계산하는 방식은 다음 문제를 유발한다:
+
+- 뷰포트 내 제보 수 N에 대해 각 제보마다 반경 내 누적 수를 재계산 → **O(N²) 연산 복잡도**
+- 대규모 트래픽 환경에서 Python GIL 및 메모리 로딩 오버헤드로 인한 치명적 성능 저하
+- 데이터베이스와 애플리케이션 간 불필요한 왕복 쿼리(N+1) 발생
+
+#### 해결 전략 — Computation Push-down
+
+```sql
+-- 단일 쿼리 내 CROSS JOIN LATERAL로 모든 공간 연산 처리
+CROSS JOIN LATERAL (
+    SELECT COUNT(*) AS cnt
+    FROM   reports n
+    WHERE  ST_DWithin(n.location, r.location, 50)  -- GiST 인덱스 활용
+      AND  n.status != 'RESOLVED'
+      AND  n.created_at > NOW() - INTERVAL '30 days'
+) AS nearby
+```
+
+위험도 계산 연산을 PostgreSQL PostGIS 엔진 레이어로 내재화(Push-down)하여:
+
+- **데이터 로딩 오버헤드 제로** — 애플리케이션 메모리에 제보 데이터를 올리지 않음
+- **GiST 공간 인덱스 100% 활용** — `ST_DWithin`이 `idx_reports_location` 인덱스를 직접 타고 실행
+- **단일 왕복 쿼리** — CTE + UNION ALL + LATERAL 구조로 N+1 완전 제거
+
+#### 결론
+
+`RiskAnalysisService` 클래스 다이어그램은 초기 설계 의도의 기록으로 보존한다. 실제 아키텍처에서는 해당 책임이 데이터베이스 레이어로 위임되었으며, 이는 성능 최적화를 위한 의도적 결정이다.
