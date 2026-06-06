@@ -129,6 +129,17 @@ classDiagram
         +str status
     }
 
+    class AdminAlertResponse {
+        <<Pydantic Schema>>
+        +str id
+        +float lat
+        +float lng
+        +str hazard_type
+        +str status
+        +datetime created_at
+        +int report_count
+    }
+
     class RiskAnalysisService {
         -Session db
         +calculate_risk(type, location)
@@ -152,8 +163,6 @@ classDiagram
         +create_report(data)
         +get_layers(lat, lng, radius)
         +update_status(id, status)
-        +get_alerts()
-        +generate_qr(lat, lng)
         +log_status_change(id, prev, new, note)
     }
 
@@ -162,6 +171,7 @@ classDiagram
     ReportService ..> ExifService : uses
     ReportCreate ..> Report : creates
     Report ..> LayerResponse : maps to
+    Report ..> AdminAlertResponse : maps to
 ```
 
 ---
@@ -208,3 +218,5 @@ CROSS JOIN LATERAL (
 #### 결론
 
 `RiskAnalysisService` 클래스 다이어그램은 초기 설계 의도의 기록으로 보존한다. 실제 아키텍처에서는 해당 책임이 데이터베이스 레이어로 위임되었으며, 이는 성능 최적화를 위한 의도적 결정이다.
+
+동일한 이유로 `ReportService`에 초기 명세된 `get_alerts()`와 `generate_qr(lat, lng)` 메서드도 구현 단계에서 클래스로 위임되지 않았다. `GET /api/admin/alerts`는 CRITICAL 필터 SQL을 엔드포인트에서 직접 실행하고, `GET /api/qr`은 `qrcode` 라이브러리를 엔드포인트에서 직접 호출한다. 클래스 다이어그램에서 두 메서드는 제거하고 `AdminAlertResponse` 스키마를 추가하여 실제 구현을 반영한다.
