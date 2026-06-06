@@ -1,13 +1,18 @@
+import io
 import os
+from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+import qrcode
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.limiter import limiter
-from app.schemas.report import ReportCreateResponse, StatusUpdateRequest, StatusUpdateResponse
+from app.schemas.report import AdminAlertResponse, ReportCreateResponse, StatusUpdateRequest, StatusUpdateResponse
 from app.services.exif_service import ExifService
 from app.services.image_service import ImageService
 from app.services.report_service import ReportService
@@ -19,7 +24,47 @@ def _verify_admin(credentials: HTTPAuthorizationCredentials | None = Depends(_be
     if credentials is None or credentials.credentials != os.getenv("ADMIN_TOKEN"):
         raise HTTPException(status_code=401, detail="Invalid or missing admin token")
 
+
 router = APIRouter()
+
+_ADMIN_ALERTS_SQL = text("""
+SELECT
+    r.id::text                              AS id,
+    ST_Y(r.location::geometry)             AS lat,
+    ST_X(r.location::geometry)             AS lng,
+    r.hazard_type,
+    r.status,
+    r.created_at,
+    nearby.cnt                             AS report_count
+FROM   reports r
+CROSS JOIN LATERAL (
+    SELECT COUNT(*) AS cnt
+    FROM   reports n
+    WHERE  n.hazard_type = 'LATENT'
+      AND  n.status      != 'RESOLVED'
+      AND  n.created_at  >  NOW() - INTERVAL '30 days'
+      AND  ST_DWithin(n.location, r.location, 50)
+) AS nearby
+WHERE  r.hazard_type = 'LATENT'
+  AND  r.status      != 'RESOLVED'
+  AND  nearby.cnt    >= 30
+
+UNION ALL
+
+SELECT
+    r.id::text                              AS id,
+    ST_Y(r.location::geometry)             AS lat,
+    ST_X(r.location::geometry)             AS lng,
+    r.hazard_type,
+    r.status,
+    r.created_at,
+    1                                      AS report_count
+FROM   reports r
+WHERE  r.hazard_type = 'IMMEDIATE'
+  AND  r.status      = 'OPEN'
+
+ORDER BY created_at DESC
+""")
 
 _image_svc = ImageService()
 _exif_svc = ExifService()
@@ -83,3 +128,39 @@ async def update_report_status(
         previous_status=prev_status,
         new_status=report.status,
     )
+
+
+@router.get("/api/admin/alerts", response_model=List[AdminAlertResponse])
+async def get_admin_alerts(
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_admin),
+) -> List[AdminAlertResponse]:
+    rows = db.execute(_ADMIN_ALERTS_SQL).mappings().all()
+    return [
+        AdminAlertResponse(
+            id=row["id"],
+            lat=row["lat"],
+            lng=row["lng"],
+            hazard_type=row["hazard_type"],
+            status=row["status"],
+            created_at=row["created_at"],
+            report_count=row["report_count"],
+        )
+        for row in rows
+    ]
+
+
+@router.get("/api/qr")
+async def get_qr(
+    lat: float = Query(..., ge=-90.0, le=90.0, description="위도"),
+    lng: float = Query(..., ge=-180.0, le=180.0, description="경도"),
+) -> StreamingResponse:
+    base_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    report_url = f"{base_url}/report?lat={lat}&lng={lng}"
+
+    img = qrcode.make(report_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    return StreamingResponse(buf, media_type="image/png")

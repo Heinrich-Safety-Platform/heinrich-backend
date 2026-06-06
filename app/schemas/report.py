@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -38,3 +39,13 @@ class StatusUpdateResponse(BaseModel):
     id: UUID | int
     previous_status: str
     new_status: str
+
+
+class AdminAlertResponse(BaseModel):
+    id: str
+    lat: float
+    lng: float
+    hazard_type: str
+    status: str
+    created_at: datetime
+    report_count: int
