@@ -39,7 +39,6 @@ class ReportService:
         )
         self.db.add(report)
         self.db.commit()
-        self.db.refresh(report)
         return report
 
     def update_status(self, report_id: UUID, req: StatusUpdateRequest) -> tuple[Report, str]:
@@ -64,7 +63,6 @@ class ReportService:
         report.status = req.status
         self._log_status_change(report_id, prev_status, req.status, req.note)
         self.db.commit()
-        self.db.refresh(report)
         return report, prev_status
 
     def _log_status_change(self, report_id: UUID, prev: str, new: str, note: str | None) -> None:
