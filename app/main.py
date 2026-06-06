@@ -81,9 +81,16 @@ SELECT
     ST_X(r.location::geometry)              AS lng,
     r.hazard_type                           AS "hazardType",
     r.status,
-    1                                       AS "reportCount",
+    nearby_imm.cnt                          AS "reportCount",
     'CRITICAL'                              AS "riskLevel"
 FROM   reports r, vp
+CROSS JOIN LATERAL (
+    SELECT COUNT(*) AS cnt
+    FROM   reports n
+    WHERE  n.hazard_type = 'IMMEDIATE'
+      AND  n.status      = 'OPEN'
+      AND  ST_DWithin(n.location, r.location, 50)
+) AS nearby_imm
 WHERE  r.hazard_type = 'IMMEDIATE'
   AND  r.status      = 'OPEN'
   AND  ST_DWithin(r.location, vp.centre, :radius)
