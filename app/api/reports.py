@@ -35,7 +35,8 @@ SELECT
     r.hazard_type,
     r.status,
     r.created_at,
-    nearby.cnt                             AS report_count
+    nearby.cnt                             AS report_count,
+    1                                      AS sort_priority
 FROM   reports r
 CROSS JOIN LATERAL (
     SELECT COUNT(*) AS cnt
@@ -58,14 +59,13 @@ SELECT
     r.hazard_type,
     r.status,
     r.created_at,
-    1                                      AS report_count
+    1                                      AS report_count,
+    0                                      AS sort_priority
 FROM   reports r
 WHERE  r.hazard_type = 'IMMEDIATE'
   AND  r.status      = 'OPEN'
 
-ORDER BY
-    CASE WHEN hazard_type = 'IMMEDIATE' THEN 0 ELSE 1 END,
-    created_at DESC
+ORDER BY sort_priority, created_at DESC
 """)
 
 _image_svc = ImageService()
