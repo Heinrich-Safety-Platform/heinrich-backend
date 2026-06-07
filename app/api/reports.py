@@ -63,7 +63,9 @@ FROM   reports r
 WHERE  r.hazard_type = 'IMMEDIATE'
   AND  r.status      = 'OPEN'
 
-ORDER BY created_at DESC
+ORDER BY
+    CASE WHEN hazard_type = 'IMMEDIATE' THEN 0 ELSE 1 END,
+    created_at DESC
 """)
 
 _image_svc = ImageService()
