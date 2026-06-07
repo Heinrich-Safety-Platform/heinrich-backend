@@ -59,7 +59,10 @@ SELECT
         WHEN nearby.cnt BETWEEN 1  AND  5   THEN 'NEAR_MISS'
         WHEN nearby.cnt BETWEEN 6  AND 29   THEN 'MINOR'
         ELSE                                     'CRITICAL'
-    END                                     AS "riskLevel"
+    END                                     AS "riskLevel",
+    r.content,
+    r.location_detail                       AS "locationDetail",
+    r.created_at                            AS "latestReportAt"
 FROM   reports r, vp
 CROSS JOIN LATERAL (
     SELECT COUNT(*) AS cnt
@@ -82,7 +85,10 @@ SELECT
     r.hazard_type                           AS "hazardType",
     r.status,
     nearby_imm.cnt                          AS "reportCount",
-    'CRITICAL'                              AS "riskLevel"
+    'CRITICAL'                              AS "riskLevel",
+    r.content,
+    r.location_detail                       AS "locationDetail",
+    r.created_at                            AS "latestReportAt"
 FROM   reports r, vp
 CROSS JOIN LATERAL (
     SELECT COUNT(*) AS cnt
@@ -137,6 +143,9 @@ async def get_layers(
             riskLevel=row["riskLevel"],
             reportCount=row["reportCount"],
             status=row["status"],
+            content=row["content"],
+            locationDetail=row["locationDetail"],
+            latestReportAt=row["latestReportAt"],
         )
         for row in rows
     ]

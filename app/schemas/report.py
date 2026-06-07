@@ -17,6 +17,9 @@ class LayerResponse(BaseModel):
     riskLevel: str     # 'SAFE' | 'NEAR_MISS' | 'MINOR' | 'CRITICAL'
     reportCount: int   # LATENT: 50m 내 누적 count / IMMEDIATE: 1 (고정)
     status: str        # 'OPEN' | 'IN_PROGRESS'
+    content: Optional[str] = None
+    locationDetail: Optional[str] = None
+    latestReportAt: Optional[datetime] = None
 
 
 class ReportCreateResponse(BaseModel):
