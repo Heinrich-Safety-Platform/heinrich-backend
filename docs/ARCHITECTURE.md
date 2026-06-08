@@ -4,13 +4,13 @@
 
 ```
 [시민 디바이스]
-  PWA / QR 스캔(?lat=xx&lng=xx) / URL 직접 접근
+  웹 브라우저 / QR 스캔(?lat=xx&lng=xx) / URL 직접 접근
   / 지도 팝업 "이 위치 추가 제보하기"
   사진 + GPS + 설명(선택) + 세부위치(선택) + 유형
         │
         ▼
 [Next.js Frontend - Vercel]
-  ├── /report   제보 PWA
+  ├── /report   제보 웹 페이지 (PWA는 초기 설계 계획이었으나 후속 과제로 분리)
   │             GPS + EXIF 검증 + 사진 + 유형 선택
   │             제보 완료 토스트 → /map 이동
   ├── /map      위험도 레이어 데모 지도
@@ -25,7 +25,7 @@
                 Phase 3: 통계 + 히스토리
         │ REST API (JSON)
         ▼
-[FastAPI Backend - Docker + EC2/OCI]
+[FastAPI Backend - Docker + Render]
   ├── POST /api/reports
   │     ├── GPS 수집 확인
   │     ├── EXIF 교차 검증 → trust_score
@@ -60,7 +60,7 @@
 
 ```
 [과제 데모 버전]
-태우님의 독립 PWA 앱 내부에서
+태우님의 독립 웹앱 내부에서
 카카오맵 SDK를 불러와 베이스 지도로 사용하고
 그 위에 FastAPI가 제공하는 위험도 레이어를 오버레이
 
@@ -76,10 +76,10 @@ GET /api/layers API를 플러그인처럼 연동하여
 | --------------- | ---------------------------------------------------- |
 | Backend         | FastAPI + PostgreSQL + PostGIS + GeoAlchemy2         |
 | Frontend        | Next.js + TypeScript + Tailwind CSS + Kakao Maps SDK |
-| PWA             | next-pwa                                             |
+| PWA             | 초기 설계 계획이었으나 후속 과제로 분리 (미구현)              |
 | QR 생성         | qrcode (Python)                                      |
 | EXIF 추출       | Pillow (Python)                                      |
-| Infra (백엔드)  | Docker Compose + EC2/OCI + Nginx                     |
+| Infra (백엔드)  | Docker Compose(로컬 개발) + Render(배포)             |
 | Infra (프론트)  | Vercel                                               |
 | AI (바이브코딩) | Claude Code + oh-my-claude code                      |
 
